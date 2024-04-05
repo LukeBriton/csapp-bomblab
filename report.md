@@ -254,7 +254,7 @@ ascii_string
   
   400ec6:	89 d8                	mov    %ebx,%eax # %eax = %ebx = 1
   400ec8:	03 44 9c fc          	add    -0x4(%rsp,%rbx,4),%eax # %eax += (%rsp + 4*%rbx - 4)
-  400ecc:	39 04 9c             	cmp    %eax,(%rsp,%rbx,4) # %eax ?= (%rsp + %rbx*4)
+  400ecc:	39 04 9c             	cmp    %eax,(%rsp,%rbx,4) # (%rsp + %rbx*4) ?= %eax
   400ecf:	74 eb                	je     400ebc <phase_2+0x31> # 相等则继续判断
   # 造一组数据：
   # 0+1=1 1+2=3 3+3=6 6+4=10 10+5=15
@@ -372,7 +372,7 @@ Ghidra 分析所得：
   
 # Case
   400f72:	b8 21 01 00 00       	mov    $0x121,%eax
-  400f77:	39 44 24 04          	cmp    %eax,0x4(%rsp) # %eax ?= (%rsp+4) 第二个数要与第一个数跳转的分支里的数对应
+  400f77:	39 44 24 04          	cmp    %eax,0x4(%rsp) # (%rsp+4) ?= %eax 第二个数要与第一个数跳转的分支里的数对应
 # 构造数据：
 # 0 -> 400f72
 # 1*256+2*16+1 = 256+32+1 = 289
@@ -428,6 +428,102 @@ Ghidra 分析所得：
              00  00  00 
              00  00
 ```
+
+### phase_4
+
+```assembly
+0000000000400fdb <phase_4>:
+  400fdb:	48 83 ec 18          	sub    $0x18,%rsp
+  400fdf:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  400fe6:	00 00 
+  400fe8:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
+  400fed:	31 c0                	xor    %eax,%eax # %eax = 0
+  400fef:	48 8d 4c 24 04       	lea    0x4(%rsp),%rcx # 第二个输入
+  400ff4:	48 89 e2             	mov    %rsp,%rdx # 应该是存第一个输入吧
+  400ff7:	be cf 25 40 00       	mov    $0x4025cf,%esi # 读入两个整数
+  400ffc:	e8 9f fb ff ff       	call   400ba0 <__isoc99_sscanf@plt>
+  401001:	83 f8 02             	cmp    $0x2,%eax
+  401004:	75 06                	jne    40100c <phase_4+0x31> # 数量不对，爆
+  
+  401006:	83 3c 24 0e          	cmpl   $0xe,(%rsp) # (%rsp) > e 会爆。
+  40100a:	76 05                	jbe    401011 <phase_4+0x36> # jbe for unsigned, jle for signed
+  40100c:	e8 36 04 00 00       	call   401447 <explode_bomb>
+  
+# %edx a_1 = 14
+# %esi a_2 = 0
+# %edi a_3 = input_1
+  401011:	ba 0e 00 00 00       	mov    $0xe,%edx # %edx = e = 14
+  401016:	be 00 00 00 00       	mov    $0x0,%esi # %esi = 0
+  40101b:	8b 3c 24             	mov    (%rsp),%edi # %edi = (%rsp)
+  40101e:	e8 79 ff ff ff       	call   400f9c <func4>
+  401023:	83 f8 03             	cmp    $0x3,%eax # %eax != 3 就爆炸。
+  # 第一个输入应当为 13
+  401026:	75 07                	jne    40102f <phase_4+0x54>
+  
+  401028:	83 7c 24 04 03       	cmpl   $0x3,0x4(%rsp) # (%rsp+4) != 3 就爆炸
+  # 第二个输入应当为 3
+  40102d:	74 05                	je     401034 <phase_4+0x59>
+  40102f:	e8 13 04 00 00       	call   401447 <explode_bomb>
+  
+  401034:	48 8b 44 24 08       	mov    0x8(%rsp),%rax
+  401039:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  401040:	00 00 
+  401042:	75 05                	jne    401049 <phase_4+0x6e>
+  401044:	48 83 c4 18          	add    $0x18,%rsp
+  401048:	c3                   	ret    
+  401049:	e8 b2 fa ff ff       	call   400b00 <__stack_chk_fail@plt>
+```
+
+`func4`：
+
+```assembly
+# %edx a_1
+# %esi a_2
+# %edi a_3
+0000000000400f9c <func4>:
+  400f9c:	48 83 ec 08          	sub    $0x8,%rsp
+  400fa0:	89 d0                	mov    %edx,%eax # %eax = a_1
+  400fa2:	29 f0                	sub    %esi,%eax # %eax = a_1 - a_2
+  400fa4:	89 c1                	mov    %eax,%ecx # %ecx = a_1 - a_2
+  400fa6:	c1 e9 1f             	shr    $0x1f,%ecx # %ecx 逻辑右移31位，保留最高位。（0 或 1） 移动了个寂寞，几乎一定为 0。a_1 - a_2 都不太可能这么大。
+  400fa9:	01 c1                	add    %eax,%ecx # %ecx = (a_1 - a_2) >>logi 31 +  (a_1 - a_2)
+  400fab:	d1 f9                	sar    %ecx # %ecx 符号右移1位 = [(a_1 - a_2) >>logi 31 +  (a_1 - a_2)]/2
+  400fad:	01 f1                	add    %esi,%ecx # %ecx = [(a_1 - a_2) >>logi 31 +  (a_1 - a_2)]/2 + a_2
+                 	               	               	 # 化简一下 %ecx = (a_1 - a_2)]/2 + a_2
+                 	               	               	 # 取中点
+  400faf:	39 f9                	cmp    %edi,%ecx # %ecx ?= a_3
+  400fb1:	7f 0e                	jg     400fc1 <func4+0x25> # %ecx > a_3
+  
+  400fb3:	b8 00 00 00 00       	mov    $0x0,%eax # %eax = 0
+  400fb8:	39 f9                	cmp    %edi,%ecx # %ecx ?= %edi
+  400fba:	7c 11                	jl     400fcd <func4+0x31> # %ecx < a_3
+  400fbc:	48 83 c4 08          	add    $0x8,%rsp
+  400fc0:	c3                   	ret    
+####
+# a_2 ... ... ... %rcx ... .a_3. ... a_1
+# a_1 = 14; a_2 = 0; a_3 = input_1
+  #!!! %rcx 就是 %ecx
+  # %ecx > a_3
+  # 中点比 a_3 大，那就将右端点改为中点往左一点。
+  400fc1:	8d 51 ff             	lea    -0x1(%rcx),%edx # a_1 = %rcx - 1
+  400fc4:	e8 d3 ff ff ff       	call   400f9c <func4>
+  400fc9:	01 c0                	add    %eax,%eax # %eax *= 2
+  400fcb:	eb ef                	jmp    400fbc <func4+0x20> # 顺利
+  
+  # %eax = 0
+  # %ecx < a_3
+  # 中点比 a_3 小，那就将左端点改为中点往右一点。
+  400fcd:	8d 71 01             	lea    0x1(%rcx),%esi # %a_2 = %rcx + 1
+  # 那么这里进行的是 a_1 = 14; a_2 = 8; a_3 = 11; 这样的话，只会得到 1。
+  #                a_1 = 14; a_2 = 12; a_3 = 13;
+  400fd0:	e8 c7 ff ff ff       	call   400f9c <func4>
+  
+  # 3=2*1+1 1=2*0+1
+  400fd5:	8d 44 00 01          	lea    0x1(%rax,%rax,1),%eax # %eax = 2*%rax+1
+  400fd9:	eb e1                	jmp    400fbc <func4+0x20> # 顺利
+```
+
+
 
 ## 四、实验总结
 
@@ -534,6 +630,14 @@ https://stackoverflow.com/questions/1658294/whats-the-purpose-of-the-lea-instruc
 https://stackoverflow.com/questions/69829654/what-does-isoc99-sscanf-do
 
 https://stackoverflow.com/questions/56444576/asm-isoc99-scanf-after-function-declaration
+
+On x86_64, parameters are passed in registers, so your call to scanf has 3 parameters stored in 3 registers:
+
+- `rdi` pointer to the string `"%u %u"`, the format to parse (two unsigned integers)
+- `rsi` should be a `unsigned *`, pointer to where to put the first parsed integer
+- `rdx` pointer to where to put the second parsed integer.
+
+https://stackoverflow.com/questions/72492532/in-which-register-does-the-scanf-function-store-input-values
 
 ### "address" of a register
 
@@ -650,3 +754,43 @@ The interface `__stack_chk_fail()` shall abort the function that called it with 
 The interface `__stack_chk_fail()` does not check for a stack overflow itself. It merely reports one when invoked.
 
 http://refspecs.linux-foundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/libc---stack-chk-fail-1.html
+
+### `shr` & `sar`instruction
+
+- The `shr` or `sar` instruction is used to shift  the bits of the operand destination to the right, by the number of bits  specified in the count operand.
+- Bits shifted beyond the destination are first shifted into the [CF flag](https://www.aldeid.com/wiki/X86-assembly/Registers#CF_.28Carry_Flag.29).
+- Equivalent to dividing by 2
+
+```
+mov eax, 0xA  ; set EAX to 0xA (1010 in binary)
+shr eax, 2    ; shifts 2 bits to the right in EAX, now equal to 0x2 (0010 in binary)
+              +---+---+---+---+---┬───┬───┬───┬───┐
+mov eax, 0xA  | 0 | 0 | 0 | 0 | 0 │ 1 │ 0 │ 1 │ 0 │
+              +---+---+---+---+---┴───┴───┴───┴───┘
+                                    │   │   └───────────┐
+                                    │   └───────┐       │
+                                    └───────┐   │       │
+              +---+---+---+---+---+---+---┬───┬───┐   ┌───┐
+shr eax, 2    | 0 | 0 | 0 | 0 | 0 | 0 | 0 │ 1 │ 0 │   │ 1 │
+              +---+---+---+---+---+---+---┴───┴───┘   └───┘
+                                                        CF
+```
+
+https://www.aldeid.com/wiki/X86-assembly/Instructions/shr
+
+| Opcode  | Mnemonic      | Description                          |
+| ------- | ------------- | ------------------------------------ |
+| `D2 /5` | `SHR r/m8,CL` | Unsigned divide r/m8 by 2, CL times. |
+| `D2 /7` | `SAR r/m8,CL` | Signed divide* r/m8 by 2, CL times.  |
+
+https://c9x.me/x86/html/file_module_x86_id_285.html
+
+> if you perform `SHR` 00110000b you would end up with 00011000b
+
+If you shifted one bit to the right, yes. You can specify the shift amount, so it's not fixed at 1.
+
+> However, if you were to perform `SHR` on 11111111b you would end up with an incorrect answer 
+
+If you did a logical shift of 11111111b one bit to the right you'd  get 01111111b. Whether you consider that to be incorrect or not depends  entirely on what you're trying to achieve. If you wanted to preserve the sign you should've used `SAR`.
+
+https://stackoverflow.com/questions/30644708/shr-and-sar-commands
