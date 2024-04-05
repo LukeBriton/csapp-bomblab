@@ -263,7 +263,7 @@ ascii_string
   400ed8:	48 8b 44 24 18       	mov    0x18(%rsp),%rax # 24 Bytes
   400edd:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
   400ee4:	00 00 
-  400ee6:	75 06                	jne    400eee <phase_2+0x63> # 爆栈？
+  400ee6:	75 06                	jne    400eee <phase_2+0x63> # 爆栈
   400ee8:	48 83 c4 20          	add    $0x20,%rsp
   400eec:	5b                   	pop    %rbx
   400eed:	c3                   	ret    
@@ -307,12 +307,126 @@ Disassembly of section .rodata:
   4025d4:	00 45 72             	add    %al,0x72(%rbp)
 ```
 
+Ghidra 分析所得：
+
 ```assembly
                                  	s_%d_%d_%d_%d_%d_%d_004025c3     
                                     
   004025c3  25 64 20 25 64 20    	ds    "%d %d %d %d %d %d"
             25 64 20 25 64 20 
             25 64 20 25 64 00
+```
+
+### phase_3
+
+```assembly
+0000000000400ef3 <phase_3>:
+  400ef3:	48 83 ec 18          	sub    $0x18,%rsp
+  400ef7:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  400efe:	00 00 
+  400f00:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
+  400f05:	31 c0                	xor    %eax,%eax # %eax = 0
+  400f07:	48 8d 4c 24 04       	lea    0x4(%rsp),%rcx
+  400f0c:	48 89 e2             	mov    %rsp,%rdx
+  400f0f:	be cf 25 40 00       	mov    $0x4025cf,%esi # 读入两个整数
+  400f14:	e8 87 fc ff ff       	call   400ba0 <__isoc99_sscanf@plt>
+  400f19:	83 f8 01             	cmp    $0x1,%eax # 没读够，爆。
+  400f1c:	7e 10                	jle    400f2e <phase_3+0x3b>
+  
+  400f1e:	83 3c 24 07          	cmpl   $0x7,(%rsp) # (%rsp) > 7 出错，总共8个分支。
+  400f22:	77 42                	ja     400f66 <phase_3+0x73> # jump if above，爆
+  
+  400f24:	8b 04 24             	mov    (%rsp),%eax
+  400f27:	ff 24 c5 40 24 40 00 	jmp    *0x402440(,%rax,8) # M[0x402440 + %rax * 8]
+  400f2e:	e8 14 05 00 00       	call   401447 <explode_bomb> # 爆
+  400f33:	eb e9                	jmp    400f1e <phase_3+0x2b> # 仍不理解
+
+#### Cases
+# 以下全都是跳到400f77
+  400f35:	b8 35 02 00 00       	mov    $0x235,%eax
+  400f3a:	eb 3b                	jmp    400f77 <phase_3+0x84>
+  
+  400f3c:	b8 a7 01 00 00       	mov    $0x1a7,%eax
+  400f41:	eb 34                	jmp    400f77 <phase_3+0x84>
+  
+  400f43:	b8 2b 02 00 00       	mov    $0x22b,%eax
+  400f48:	eb 2d                	jmp    400f77 <phase_3+0x84>
+  
+  400f4a:	b8 6c 00 00 00       	mov    $0x6c,%eax
+  400f4f:	eb 26                	jmp    400f77 <phase_3+0x84>
+  
+  400f51:	b8 f1 02 00 00       	mov    $0x2f1,%eax
+  400f56:	eb 1f                	jmp    400f77 <phase_3+0x84>
+  
+  400f58:	b8 3e 00 00 00       	mov    $0x3e,%eax
+  400f5d:	eb 18                	jmp    400f77 <phase_3+0x84>
+  
+  400f5f:	b8 48 02 00 00       	mov    $0x248,%eax
+  400f64:	eb 11                	jmp    400f77 <phase_3+0x84>
+####
+
+  400f66:	e8 dc 04 00 00       	call   401447 <explode_bomb> # 爆，之前似乎对爆炸机制有所误解。
+  
+  400f6b:	b8 00 00 00 00       	mov    $0x0,%eax
+  400f70:	eb 05                	jmp    400f77 <phase_3+0x84>
+  
+# Case
+  400f72:	b8 21 01 00 00       	mov    $0x121,%eax
+  400f77:	39 44 24 04          	cmp    %eax,0x4(%rsp) # %eax ?= (%rsp+4) 第二个数要与第一个数跳转的分支里的数对应
+# 构造数据：
+# 0 -> 400f72
+# 1*256+2*16+1 = 256+32+1 = 289
+# 0 289
+  400f7b:	74 05                	je     400f82 <phase_3+0x8f> # 要顺利结束。
+  400f7d:	e8 c5 04 00 00       	call   401447 <explode_bomb> # 爆
+  
+  400f82:	48 8b 44 24 08       	mov    0x8(%rsp),%rax
+  400f87:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  400f8e:	00 00 
+  400f90:	75 05                	jne    400f97 <phase_3+0xa4> # 爆栈
+  400f92:	48 83 c4 18          	add    $0x18,%rsp
+  400f96:	c3                   	ret    
+  400f97:	e8 64 fb ff ff       	call   400b00 <__stack_chk_fail@plt>
+```
+
+`$0x4025cf`指的是什么呢
+
+```assembly
+  00400f0f be  cf  25       MOV        ESI ,s_%d_%d_004025c3+12                         = "%d %d"
+           40  00
+```
+
+存放着对应的各个标签。
+
+顺带，这里可以看出来采用的是小端序。
+
+```assembly
+                         switchD_00400f27::switchdataD_00402440          
+                         
+    00402440 72  0f  40       addr       switchD_00400f27::caseD_0
+             00  00  00 
+             00  00
+    00402448 35  0f  40       addr       switchD_00400f27::caseD_1
+             00  00  00 
+             00  00
+    00402450 3c  0f  40       addr       switchD_00400f27::caseD_2
+             00  00  00 
+             00  00
+    00402458 43  0f  40       addr       switchD_00400f27::caseD_3
+             00  00  00 
+             00  00
+    00402460 4a  0f  40       addr       switchD_00400f27::caseD_4
+             00  00  00 
+             00  00
+    00402468 51  0f  40       addr       switchD_00400f27::caseD_5
+             00  00  00 
+             00  00
+    00402470 58  0f  40       addr       switchD_00400f27::caseD_6
+             00  00  00 
+             00  00
+    00402478 5f  0f  40       addr       switchD_00400f27::caseD_7
+             00  00  00 
+             00  00
 ```
 
 ## 四、实验总结
@@ -500,3 +614,39 @@ https://stackoverflow.com/questions/53579155/end-of-array-in-c-language
 **Ghidra** (pronounced GEE-druh; [/ˈɡiːdrə/](https://en.wikipedia.org/wiki/Help:IPA/English) )
 
 https://ghidra-sre.org/
+
+### Asterisk
+
+The line
+
+```
+jmpq   *0x402680(,%rax,8)
+```
+
+would be described in RTN by:
+
+```
+RIP <- M[0x402680 + (8 * RAX)]
+```
+
+where `M` is the system memory.
+
+As such, we can write the general form `jmpq *c(r1, r2, k)`, where `c` is an immediate constant, `r1` and `r2` are general purpose registers and `k` is either 1 (default), 2, 4 or 8:
+
+```
+RIP <- M[c + r1 + (k * r2)]
+```
+
+https://stackoverflow.com/questions/9223756/what-does-an-asterisk-before-an-address-mean-in-x86-64-att-assembly
+
+### Intel Little Endian
+
+https://stackoverflow.com/questions/6018386/is-x86-64-machine-language-big-endian
+
+### `__stack_chk_fail`
+
+The interface `__stack_chk_fail()` shall abort the function that called it with a message that a stack overflow has been detected. The program that called the function shall then exit.
+
+The interface `__stack_chk_fail()` does not check for a stack overflow itself. It merely reports one when invoked.
+
+http://refspecs.linux-foundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/libc---stack-chk-fail-1.html
