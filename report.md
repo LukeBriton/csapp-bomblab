@@ -30,7 +30,7 @@
 objdump -d bomb > bomb_disas.txt
 ```
 
-### phase_1 🚧
+### phase_1
 
 #### 死磕代码
 
@@ -46,7 +46,7 @@ char *input;
   400d6a:	bf 48 23 40 00       	mov    $0x402348,%edi
   400d6f:	e8 6c fd ff ff       	call   400ae0 <puts@plt>
   400d74:	e8 2f 07 00 00       	call   4014a8 <read_line>
-  400d79:	48 89 c7             	mov    %rax,%rdi # %rdi 存 *input
+  400d79:	48 89 c7             	mov    %rax,%rdi # %rdi 存 *input（存的就是所指的地址）
   400d7c:	e8 ec 00 00 00       	call   400e6d <phase_1>
   400d81:	e8 50 08 00 00       	call   4015d6 <phase_defused>
 ```
@@ -62,7 +62,7 @@ char *input;
   400e7b:	85 c0                	test   %eax,%eax # AND为0，ZF置1，否则置0。
   400e7d:	75 05                	jne    400e84 <phase_1+0x17> # ZF=0，跳转，爆。
   400e7f:	48 83 c4 08          	add    $0x8,%rsp # %eax 为0，ZF=1，OK。
-  400e83:	c3                   	ret
+  400e83:	c3                   	ret    
 
   400e84:	e8 be 05 00 00       	call   401447 <explode_bomb>
   400e89:	eb f4                	jmp    400e7f <phase_1+0x12>
@@ -89,8 +89,8 @@ char *input;
   40134d:	53                   	push   %rbx
   
   # 第一次<string_length>
-  40134e:	48 89 fb             	mov    %rdi,%rbx # 来自 <main> 中的 %rdi
-  401351:	48 89 f5             	mov    %rsi,%rbp # 来自 <phase_1> 中的 %esi
+  40134e:	48 89 fb             	mov    %rdi,%rbx # 来自 <main> 中的 %rdi，也就是读入的字符串的地址
+  401351:	48 89 f5             	mov    %rsi,%rbp # 来自 <phase_1> 中的 %esi，也就是目标字符串的地址
   401354:	e8 d4 ff ff ff       	call   40132d <string_length>
   # 第二次<string_length>
   401359:	41 89 c4             	mov    %eax,%r12d # 暂存第一遍 <string_length> 的返回值
@@ -105,18 +105,18 @@ char *input;
   401370:	5b                   	pop    %rbx
   401371:	5d                   	pop    %rbp
   401372:	41 5c                	pop    %r12
-  401374:	c3                   	ret
+  401374:	c3                   	ret    
   
 ####
 #### 这段像个循环。
-  401375:	0f b6 03             	movzbl (%rbx),%eax
-  401378:	84 c0                	test   %al,%al
-  40137a:	74 27                	je     4013a3 <strings_not_equal+0x59> # %a1为0，OK。
+  401375:	0f b6 03             	movzbl (%rbx),%eax # (%rbx) -> %eax
+  401378:	84 c0                	test   %al,%al # %al 是 %eax 的低 8 位，正好存储一个字符。
+  40137a:	74 27                	je     4013a3 <strings_not_equal+0x59> # %al为0，确定读入的当前位置为NULL，OK。
 
-  40137c:	3a 45 00             	cmp    0x0(%rbp),%al # %a1 非0，比较
+  40137c:	3a 45 00             	cmp    0x0(%rbp),%al # %a1 - (%rbp)，比较
   40137f:	75 29                	jne    4013aa <strings_not_equal+0x60> # 不等，完蛋
-  401381:	48 83 c3 01          	add    $0x1,%rbx # 来自 <main> 中的 %rdi + 1
-  401385:	48 83 c5 01          	add    $0x1,%rbp # 来自 <phase_1> 中的 %esi +1
+  401381:	48 83 c3 01          	add    $0x1,%rbx # 来自 <main> 中的 %rdi + 1，指针后移
+  401385:	48 83 c5 01          	add    $0x1,%rbp # 来自 <phase_1> 中的 %esi +1，指针后移
   401389:	0f b6 03             	movzbl (%rbx),%eax # 返回 %rbx
   
   40138c:	84 c0                	test   %al,%al # %a1 为0，ZF置1。
@@ -143,20 +143,21 @@ char *input;
 
 ```assembly
 000000000040132d <string_length>:
-  40132d:	80 3f 00             	cmpb   $0x0,(%rdi) # %rdi == 0，ZF置1，反之置0。
+  40132d:	80 3f 00             	cmpb   $0x0,(%rdi) # (%rdi) == 0，也就是input[0] == NULL，ZF置1，反之置0。
   401330:	74 12                	je     401344 <string_length+0x17> # ZF=1，跳转，将 %eax 置0。
-  401332:	48 89 fa             	mov    %rdi,%rdx # %rdx
+  401332:	48 89 fa             	mov    %rdi,%rdx # %rdi -> %rdx
   
-  401335:	48 83 c2 01          	add    $0x1,%rdx # %rdx ++
+  #### 类似于一个指针固定指向头，一个指向尾，移动尾直到碰到 NULL。
+  401335:	48 83 c2 01          	add    $0x1,%rdx # %rdx ++（input[++i]）
   401339:	89 d0                	mov    %edx,%eax # %eax <- %edx（%rdx 截半）
   40133b:	29 f8                	sub    %edi,%eax # %eax -= %edi（%rdi 截半）
   
-  40133d:	80 3a 00             	cmpb   $0x0,(%rdx)
-  401340:	75 f3                	jne    401335 <string_length+0x8> # %rdx != 0，再进行前面的循环
+  40133d:	80 3a 00             	cmpb   $0x0,(%rdx) # input[i] ?= 0
+  401340:	75 f3                	jne    401335 <string_length+0x8> # (%rdx) != 0，再进行前面的循环
   401342:	f3 c3                	repz ret # %rdx == 0，返回
   
   401344:	b8 00 00 00 00       	mov    $0x0,%eax
-  401349:	c3                   	ret   
+  401349:	c3                   	ret    
 ```
 
 据此，我们首先判断其是否为空，`%rdi`为 0（相当于数组首位）的话就是为`NULL`了吧。
@@ -222,6 +223,98 @@ ascii_string
 
 我说怎么实验文档里给的示例与我生成的反汇编代码不一样呢，原来……
 
+### phase_2
+
+`phase_2`函数本体：
+
+```assembly
+0000000000400e8b <phase_2>:
+  400e8b:	53                   	push   %rbx
+  400e8c:	48 83 ec 20          	sub    $0x20,%rsp # 为什么腾了 32 Bytes 假使此地址为 a。
+  400e90:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax # 段寄存器 2*16+8=40？
+  400e97:	00 00 
+  400e99:	48 89 44 24 18       	mov    %rax,0x18(%rsp) # %rsp + 24(a+24) 指向的位置放入了 %rax，留空给六个寄存器？
+  400e9e:	31 c0                	xor    %eax,%eax # %eax = 0
+  400ea0:	48 89 e6             	mov    %rsp,%rsi # %rsp -> %rsi a
+  400ea3:	e8 c1 05 00 00       	call   401469 <read_six_numbers>
+  
+  400ea8:	83 3c 24 00          	cmpl   $0x0,(%rsp)
+  400eac:	78 07                	js     400eb5 <phase_2+0x2a> # (%rsp) < 0 就爆？
+  
+  400eae:	bb 01 00 00 00       	mov    $0x1,%ebx # %ebx = 1
+  400eb3:	eb 11                	jmp    400ec6 <phase_2+0x3b>
+  
+  400eb5:	e8 8d 05 00 00       	call   401447 <explode_bomb>
+  400eba:	eb f2                	jmp    400eae <phase_2+0x23> # 这句是干什么的，不都已经爆了吗？
+  
+  400ebc:	48 83 c3 01          	add    $0x1,%rbx
+  
+  400ec0:	48 83 fb 06          	cmp    $0x6,%rbx
+  400ec4:	74 12                	je     400ed8 <phase_2+0x4d> # 满 6 回了，过关。
+  
+  400ec6:	89 d8                	mov    %ebx,%eax # %eax = %ebx = 1
+  400ec8:	03 44 9c fc          	add    -0x4(%rsp,%rbx,4),%eax # %eax += (%rsp + 4*%rbx - 4)
+  400ecc:	39 04 9c             	cmp    %eax,(%rsp,%rbx,4) # %eax ?= (%rsp + %rbx*4)
+  400ecf:	74 eb                	je     400ebc <phase_2+0x31> # 相等则继续判断
+  # 造一组数据：
+  # 0+1=1 1+2=3 3+3=6 6+4=10 10+5=15
+  400ed1:	e8 71 05 00 00       	call   401447 <explode_bomb>
+  400ed6:	eb e4                	jmp    400ebc <phase_2+0x31>
+  400ed8:	48 8b 44 24 18       	mov    0x18(%rsp),%rax # 24 Bytes
+  400edd:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  400ee4:	00 00 
+  400ee6:	75 06                	jne    400eee <phase_2+0x63> # 爆栈？
+  400ee8:	48 83 c4 20          	add    $0x20,%rsp
+  400eec:	5b                   	pop    %rbx
+  400eed:	c3                   	ret    
+  400eee:	e8 0d fc ff ff       	call   400b00 <__stack_chk_fail@plt>
+```
+
+调用的`read_six_numbers`：
+
+```assembly
+0000000000401469 <read_six_numbers>:
+  401469:	48 83 ec 08          	sub    $0x8,%rsp # 又腾了 8 Bytes a-8
+  40146d:	48 89 f2             	mov    %rsi,%rdx # %rsp->%rsi->%rdx a
+  401470:	48 8d 4e 04          	lea    0x4(%rsi),%rcx # a + 4->%rcx 动的只是地址
+  401474:	48 8d 46 14          	lea    0x14(%rsi),%rax # a + 20->%rax
+  401478:	50                   	push   %rax # a-8
+  401479:	48 8d 46 10          	lea    0x10(%rsi),%rax # a + 16->%rax
+  40147d:	50                   	push   %rax # a-4
+  40147e:	4c 8d 4e 0c          	lea    0xc(%rsi),%r9 # a + 12->%r9
+  401482:	4c 8d 46 08          	lea    0x8(%rsi),%r8 # a + 8->%r8
+  401486:	be c3 25 40 00       	mov    $0x4025c3,%esi
+  40148b:	b8 00 00 00 00       	mov    $0x0,%eax
+  401490:	e8 0b f7 ff ff       	call   400ba0 <__isoc99_sscanf@plt>
+  401495:	48 83 c4 10          	add    $0x10,%rsp # %rsp += 16
+  401499:	83 f8 05             	cmp    $0x5,%eax
+  40149c:	7e 05                	jle    4014a3 <read_six_numbers+0x3a> # %eax <= 5，爆。
+  40149e:	48 83 c4 08          	add    $0x8,%rsp # %eax > 5，我们安全了，暂时的。
+  4014a2:	c3                   	ret    
+  4014a3:	e8 9f ff ff ff       	call   401447 <explode_bomb>
+```
+
+好奇`$0x4025c3`到底是哪块儿。
+
+```assembly
+Disassembly of section .rodata:
+
+0000000000402480 <array.3415>:
+
+  4025c1:	2e 00 25 64 20 25 64 	cs add %ah,0x64252064(%rip)        # 6465462c <_end+0x6405081c>
+  4025c8:	20 25 64 20 25 64    	and    %ah,0x64252064(%rip)        # 64654632 <_end+0x64050822>
+  4025ce:	20 25 64 20 25 64    	and    %ah,0x64252064(%rip)        # 64654638 <_end+0x64050828>
+  4025d4:	00 45 72             	add    %al,0x72(%rbp)
+```
+
+```assembly
+                                 	s_%d_%d_%d_%d_%d_%d_004025c3     
+                                    
+  004025c3  25 64 20 25 64 20    	ds    "%d %d %d %d %d %d"
+            25 64 20 25 64 20 
+            25 64 20 25 64 00
+```
+
 ## 四、实验总结
 
 ### x86中的32位和64位寄存器
@@ -241,6 +334,16 @@ https://stackoverflow.com/questions/43623012/do-32-and-64-bit-values-share-the-s
 https://stackoverflow.com/questions/228200/why-is-there-not-a-register-that-contains-the-higher-bytes-of-eax/228367#228367
 
 https://stackoverflow.com/questions/11177137/why-do-x86-64-instructions-on-32-bit-registers-zero-the-upper-part-of-the-full-6
+
+### `test %eax, %eax`
+
+`test eax,eax` is just an optimized `cmp eax,0`. It's written this way to save space, as `cmp eax,0` must encode that zero directly into your program as `00 00 00 00` (yes, that's 4 bytes that are each zero), which wastes space doing the same thing to the zero flag that `test eax, eax` does.
+
+https://stackoverflow.com/questions/75075395/contradictory-behavior-of-jne-x86-assembly-instruction
+
+https://stackoverflow.com/questions/147173/testl-eax-against-eax
+
+https://reverseengineering.stackexchange.com/questions/15184/what-does-the-test-instruction-do
 
 ### `rep ret`
 
@@ -269,3 +372,131 @@ https://stackoverflow.com/questions/433895/why-are-c-character-literals-ints-ins
 ### Byte & Word Addressing
 
 https://stackoverflow.com/questions/48129466/why-do-we-use-byte-addressing-instead-of-word-addressing
+
+### `js` instruction
+
+`JS` will jump if the sign flag is set (by an earlier instruction). [CMP](http://web.itu.edu.tr/~aydineb/index_files/instr/cmp.html) will always modify the flags by performing a subtraction, in this case `%cl - %al`.
+
+`CMP`: **Subtracts source from destination.**
+
+https://stackoverflow.com/questions/21872334/what-does-js-do-in-assembly-x86
+
+http://www.unixwiz.net/techtips/x86-jumps.html
+
+### `FS` segment register
+
+https://stackoverflow.com/questions/10810203/what-is-the-fs-gs-register-intended-for
+
+The x86 architecture supports segmentation. Instructions which access memory can use segment register based addressing mode. The following notation is used to address a byte within a segment:
+
+> Segment-register:Byte-address
+
+The segment base address is added to the Byte-address to compute the resulting virtual address which is accessed. This allows to access multiple instances of data with the identical Byte-address, i.e. the same code. The selection of a particular instance is purely based on the base-address in the segment register.
+
+The FS segment is commonly used to address Thread Local Storage (TLS). FS is usually managed by runtime code or a threading library. Variables declared with the ‘__thread’ storage class specifier are instantiated per thread and the compiler emits the FS: address prefix for accesses to these variables. Each thread has its own FS base address so common code can be used without complex address offset calculations to access the per thread instances. Applications should not use FS for other purposes when they use runtimes or threading libraries which manage the per thread FS.
+
+https://www.kernel.org/doc/html/next/x86/x86_64/fsgs.html
+
+### `JLE` instruction
+
+https://stackoverflow.com/questions/9617877/assembly-jg-jnle-jl-jnge-after-cmp
+
+### `LEA` instruction
+
+也只有在`LEA`指令下，`offset(base, index, multiplier)`才会被视作所指向的地址，而非其地址所指向的内容。
+
+非常赞同：
+
+Wouldn't it have been cleaner to extend the `mov` instruction and leave off the brackets? `MOV EDX, EBX + 8*EAX + 4`
+
+By replacing LEA with a specialized MOV you  keep the syntax clean: [] brackets are always the equivalent of  dereferencing a pointer in C. Without brackets, you always deal with the pointer itself.
+
+https://stackoverflow.com/questions/1658294/whats-the-purpose-of-the-lea-instruction
+
+### `__isoc99_sscanf`
+
+**This  function  return the number of input items successfully matched and assigned, which can be fewer than provided for, or even zero in the event of an early matching failure.**
+
+https://stackoverflow.com/questions/69829654/what-does-isoc99-sscanf-do
+
+https://stackoverflow.com/questions/56444576/asm-isoc99-scanf-after-function-declaration
+
+### "address" of a register
+
+https://stackoverflow.com/questions/5301292/is-there-is-a-way-to-get-the-address-of-a-register
+
+https://stackoverflow.com/questions/52308185/are-cpu-general-purpose-registers-usually-memory-mapped
+
+### indirect addressing
+
+```assembly
+movl (%edx), %eax
+```
+
+Means "the memory at the address that's stored in the register". 
+
+https://stackoverflow.com/questions/61004313/what-do-parentheses-surrounding-a-register-mean
+
+https://stackoverflow.com/questions/69967899/indirect-adressing-in-assembly-x86
+
+https://stackoverflow.com/questions/46123822/how-to-load-the-contents-of-the-memory-address-stored-in-a-register-in-assembly       
+
+The complete AT&T base/index register syntax is:
+
+```assembly
+offset(base, index, multiplier)
+```
+
+https://stackoverflow.com/questions/18650093/what-does-a-comma-in-a-parenthesis-mean-in-the-att-syntax-for-x86-assembly
+
+```assembly
+GAS memory operand      NASM memory operand
+------------------      -------------------
+
+100                     [100]
+%es:100                 [es:100]
+(%eax)                  [eax]
+(%eax,%ebx)             [eax+ebx]
+(%ecx,%ebx,2)           [ecx+ebx*2]
+(,%ebx,2)               [ebx*2]
+-10(%eax)               [eax-10]
+%ds:-10(%ebp)           [ds:ebp-10]
+Example instructions,
+mov %ax,    100
+mov %eax,   -100(%eax)
+```
+
+https://stackoverflow.com/questions/6819957/what-does-the-bracket-in-movl-eax-eax-mean/6820015#6820015
+
+https://stackoverflow.com/questions/27936196/a-couple-of-questions-about-base-indexscale-disp-and-att-dispbase-inde
+
+### `%al` register
+
+- **`EAX` is the full 32-bit value**
+- **`AX` is the lower 16-bits**
+- **`AL` is the lower 8 bits**
+- **`AH` is the bits 8 through 15** (zero-based), the top half of AX
+
+### Parentheses
+
+- 在 `lea 0x4(%rsi), %rcx` 指令中，`lea`（Load Effective Address）的作用是计算括号内给出的地址表达式的值，并将这个计算结果（即地址）加载到 `%rcx` 寄存器中。这里，括号内的表达式 `0x4(%rsi)` 表示 `%rsi` 寄存器的值加上 4，这个结果是一个地址，被直接存储在 `%rcx` 中，不进行内存访问。
+
+- 在 `movq 8(%rbp), %rdx` 指令中，`movq` 是数据传送指令，用于将数据从源位置移动到目标位置。这里的括号 `8(%rbp)` 表示的是一个内存地址，计算方式是 `%rbp` 寄存器的值加上 8。与 `lea` 指令不同，`movq` 会访问该地址指向的内存位置，将那里的数据（64位或者8字节，因为是 `movq`）加载到 `%rdx` 寄存器中。
+
+因此，`lea` 指令的括号用于构造地址表达式，结果是一个地址，而 `movq` 指令的括号用于指定一个内存地址，指令会访问该地址并加载或存储数据。简单来说，`lea` 与地址计算相关，而 `movq` 与实际的内存访问操作相关。**⚠️ ChatGPT 4 生成（其措辞可能会让人疑惑）**
+
+### end of array
+
+C arrays don't have an end marker.
+
+It is your responsibility as the programmer to keep track of the  allocated size of the array to make sure you don't try to access element outside the allocated size.
+
+If you do access an element outside the allocated size, the result is [undefined behaviour](https://en.wikipedia.org/wiki/Undefined_behavior).
+
+https://stackoverflow.com/questions/53579155/end-of-array-in-c-language
+
+### Silver Bullet of NSA
+
+**Ghidra** (pronounced GEE-druh; [/ˈɡiːdrə/](https://en.wikipedia.org/wiki/Help:IPA/English) )
+
+https://ghidra-sre.org/
