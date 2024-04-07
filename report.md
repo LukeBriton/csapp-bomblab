@@ -791,6 +791,150 @@ Ghidra 分析所得：
   4015d1:	e8 71 fe ff ff       	call   401447 <explode_bomb>
 ```
 
+### phase_5
+
+`phase_5` 函数：
+
+```assembly
+000000000040104e <phase_5>:
+  40104e:	48 83 ec 18          	sub    $0x18,%rsp
+  401052:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  401059:	00 00 
+  40105b:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
+  401060:	31 c0                	xor    %eax,%eax
+  401062:	48 8d 4c 24 04       	lea    0x4(%rsp),%rcx
+  401067:	48 89 e2             	mov    %rsp,%rdx
+  40106a:	be cf 25 40 00       	mov    $0x4025cf,%esi # 与 phase_3 一样
+  40106f:	e8 2c fb ff ff       	call   400ba0 <__isoc99_sscanf@plt>
+  401074:	83 f8 01             	cmp    $0x1,%eax
+  401077:	7e 57                	jle    4010d0 <phase_5+0x82> # %eax <= 1，爆
+  
+  401079:	8b 04 24             	mov    (%rsp),%eax # x_1 -> %eax
+  40107c:	83 e0 0f             	and    $0xf,%eax # 掩码，保留末4位。
+  40107f:	89 04 24             	mov    %eax,(%rsp) # 存回去。x_1 %= 16
+  401082:	83 f8 0f             	cmp    $0xf,%eax # 比较
+  401085:	74 2f                	je     4010b6 <phase_5+0x68> # %eax 等于f，爆。
+  # %eax < 16
+  401087:	b9 00 00 00 00       	mov    $0x0,%ecx # %ecx = 0
+  40108c:	ba 00 00 00 00       	mov    $0x0,%edx
+  
+  
+  # 像循环
+  401091:	83 c2 01             	add    $0x1,%edx # %edx += 1
+  # 累计三次
+  401094:	48 98                	cltq   # 符号拓展 %eax
+  401096:	8b 04 85 80 24 40 00 	mov    0x402480(,%rax,4),%eax # (402480 + 4*%rax) -> %eax
+  # 往前回溯
+  # %rax = 6 -> %eax = f
+  # %rax = 14 -> %eax = 6
+  # %rax = 2 -> %eax = 14
+  # 所以 %rax 初值，即 (x_1 % 16) == 2
+  40109d:	01 c1                	add    %eax,%ecx # %ecx += %eax
+  # %ecx = 0 + 14 + 6 + 15 = 35
+  ## 以上，可令 x_1 = 2, x_2 = 35，即为可行输入
+  40109f:	83 f8 0f             	cmp    $0xf,%eax
+  4010a2:	75 ed                	jne    401091 <phase_5+0x43> # %eax != f -> 回去
+  # %eax = f
+  
+  
+  4010a4:	c7 04 24 0f 00 00 00 	movl   $0xf,(%rsp) # x_1 = f
+  4010ab:	83 fa 03             	cmp    $0x3,%edx
+  4010ae:	75 06                	jne    4010b6 <phase_5+0x68> # 爆
+  # %edx = 3
+  4010b0:	39 4c 24 04          	cmp    %ecx,0x4(%rsp)
+  4010b4:	74 05                	je     4010bb <phase_5+0x6d>
+  4010b6:	e8 8c 03 00 00       	call   401447 <explode_bomb> # 爆
+  # x_2 = %ecx = 35
+  4010bb:	48 8b 44 24 08       	mov    0x8(%rsp),%rax
+  4010c0:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  4010c7:	00 00 
+  4010c9:	75 0c                	jne    4010d7 <phase_5+0x89>
+  4010cb:	48 83 c4 18          	add    $0x18,%rsp
+  4010cf:	c3                   	ret    
+  
+  4010d0:	e8 72 03 00 00       	call   401447 <explode_bomb> # 爆
+  4010d5:	eb a2                	jmp    401079 <phase_5+0x2b>
+  4010d7:	e8 24 fa ff ff       	call   400b00 <__stack_chk_fail@plt>
+```
+
+`0x402480`对应的地址：
+
+```assembly
+                             array.3415                                   
+                             
+            00402480 0a              undefined10Ah                     [0]
+            00402481 00              undefined100h                     [1]
+            00402482 00              undefined100h                     [2]
+            00402483 00              undefined100h                     [3]
+            00402484 02              undefined102h                     [4]
+            00402485 00              undefined100h                     [5]
+            00402486 00              undefined100h                     [6]
+            00402487 00              undefined100h                     [7]
+            00402488 0e              undefined10Eh                     [8]
+            00402489 00              undefined100h                     [9]
+            0040248a 00              undefined100h                     [10]
+            0040248b 00              undefined100h                     [11]
+            0040248c 07              undefined107h                     [12]
+            0040248d 00              undefined100h                     [13]
+            0040248e 00              undefined100h                     [14]
+            0040248f 00              undefined100h                     [15]
+            00402490 08              undefined108h                     [16]
+            00402491 00              undefined100h                     [17]
+            00402492 00              undefined100h                     [18]
+            00402493 00              undefined100h                     [19]
+            00402494 0c              undefined10Ch                     [20]
+            00402495 00              undefined100h                     [21]
+            00402496 00              undefined100h                     [22]
+            00402497 00              undefined100h                     [23]
+            00402498 0f              undefined10Fh                     [24]
+            00402499 00              undefined100h                     [25]
+            0040249a 00              undefined100h                     [26]
+            0040249b 00              undefined100h                     [27]
+            0040249c 0b              undefined10Bh                     [28]
+            0040249d 00              undefined100h                     [29]
+            0040249e 00              undefined100h                     [30]
+            0040249f 00              undefined100h                     [31]
+            004024a0 00              undefined100h                     [32]
+            004024a1 00              undefined100h                     [33]
+            004024a2 00              undefined100h                     [34]
+            004024a3 00              undefined100h                     [35]
+            004024a4 04              undefined104h                     [36]
+            004024a5 00              undefined100h                     [37]
+            004024a6 00              undefined100h                     [38]
+            004024a7 00              undefined100h                     [39]
+            004024a8 01              undefined101h                     [40]
+            004024a9 00              undefined100h                     [41]
+            004024aa 00              undefined100h                     [42]
+            004024ab 00              undefined100h                     [43]
+            004024ac 0d              undefined10Dh                     [44]
+            004024ad 00              undefined100h                     [45]
+            004024ae 00              undefined100h                     [46]
+            004024af 00              undefined100h                     [47]
+            004024b0 03              undefined103h                     [48]
+            004024b1 00              undefined100h                     [49]
+            004024b2 00              undefined100h                     [50]
+            004024b3 00              undefined100h                     [51]
+            004024b4 09              undefined109h                     [52]
+            004024b5 00              undefined100h                     [53]
+            004024b6 00              undefined100h                     [54]
+            004024b7 00              undefined100h                     [55]
+            004024b8 06              undefined106h                     [56]
+            004024b9 00              undefined100h                     [57]
+            004024ba 00              undefined100h                     [58]
+            004024bb 00              undefined100h                     [59]
+            004024bc 05              undefined105h                     [60]
+            004024bd 00              undefined100h                     [61]
+            004024be 00              undefined100h                     [62]
+            004024bf 00              undefined100h                     [63]
+```
+
+数组全部内容：
+
+```
+0xa, 0x2, 0xe, 0x7, 0x8, 0xc, 0xf, 0xb, 0x0, 0x4, 0x1, 0xd, 0x3, 0x9, 0x6, 0x5
+10 , 2 , 14 , 7 , 8 , 12 , 15 , 11 , 0 , 4 , 1 , 13 , 3 , 9 , 6 , 5
+```
+
 
 
 ## 四、实验总结
@@ -1071,4 +1215,14 @@ Interprets an integer value in a byte string pointed to by `str`.
 
 If successful, an integer value corresponding to the contents of `str` is returned.
 
-###### https://en.cppreference.com/w/c/string/byte/strtol
+https://en.cppreference.com/w/c/string/byte/strtol
+
+### `cltq`
+
+- Convert Long To Quad (`cltq`): AT&T-style
+- quad (aka quad-word) == 8 bytes
+- long (AT&T) == double-word (Intel) == 4 bytes
+
+It sign extends `%eax` from 4 bytes into 8 bytes.
+
+https://stackoverflow.com/questions/6555094/what-does-cltq-do-in-assembly
