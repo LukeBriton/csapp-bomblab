@@ -523,6 +523,274 @@ Ghidra 分析所得：
   400fd9:	eb e1                	jmp    400fbc <func4+0x20> # 顺利
 ```
 
+### secret_phase 🚧
+
+“只有当你在第4阶段的解后附加一特定字符串后” # 总觉得这话在诓我
+
+到底在什么条件下才触发了呢？
+
+`secret_phase`函数本体
+
+```assembly
+000000000040125f <secret_phase>:
+  40125f:	53                   	push   %rbx
+  401260:	e8 43 02 00 00       	call   4014a8 <read_line> # 再读入行，所以该问输入应该得换行吧
+# %edx a_1 = 10
+# %esi a_2 = 0
+# %edi a_3 = *input
+  401265:	ba 0a 00 00 00       	mov    $0xa,%edx
+  40126a:	be 00 00 00 00       	mov    $0x0,%esi
+  40126f:	48 89 c7             	mov    %rax,%rdi
+  401272:	e8 09 f9 ff ff       	call   400b80 <strtol@plt>
+# %rbx = (int) input
+# %eax = (int) input - 1
+  401277:	48 89 c3             	mov    %rax,%rbx
+  40127a:	8d 40 ff             	lea    -0x1(%rax),%eax
+# (int) input - 1 ?= 1000
+  40127d:	3d e8 03 00 00       	cmp    $0x3e8,%eax # 3*256+14*16+8 = 1000
+  401282:	77 27                	ja     4012ab <secret_phase+0x4c> # 超过1000直接爆炸。
+# a_2 = (int) input
+# a_3 = $0x6030f0 ??? 像是数组基址。
+  401284:	89 de                	mov    %ebx,%esi
+  401286:	bf f0 30 60 00       	mov    $0x6030f0,%edi
+  40128b:	e8 90 ff ff ff       	call   401220 <fun7>
+  401290:	83 f8 04             	cmp    $0x4,%eax
+  401293:	74 05                	je     40129a <secret_phase+0x3b>
+  401295:	e8 ad 01 00 00       	call   401447 <explode_bomb> # 不等于 4 直接爆炸
+# 所以要凑出来 %eax = 4
+# 需要等于 40，但是，如何触发？
+  40129a:	bf 08 24 40 00       	mov    $0x402408,%edi # "Wow! You've defused the secret stag
+  40129f:	e8 3c f8 ff ff       	call   400ae0 <puts@plt>
+  4012a4:	e8 2d 03 00 00       	call   4015d6 <phase_defused>
+  4012a9:	5b                   	pop    %rbx
+  4012aa:	c3                   	ret    
+  4012ab:	e8 97 01 00 00       	call   401447 <explode_bomb>
+  4012b0:	eb d2                	jmp    401284 <secret_phase+0x25>
+```
+
+`secret_phase`只在`phase_defused`中被调用：
+
+```assembly
+00000000004015d6 <phase_defused>:
+  4015d6:	48 83 ec 78          	sub    $0x78,%rsp
+  4015da:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  4015e1:	00 00 
+  4015e3:	48 89 44 24 68       	mov    %rax,0x68(%rsp)
+  4015e8:	31 c0                	xor    %eax,%eax
+  4015ea:	83 3d 7b 21 20 00 06 	cmpl   $0x6,0x20217b(%rip)        # 60376c <num_input_strings>
+  # 似乎得研究研究<read_line>
+  # 是不是在检测下一条指令的对应位置？
+  4015f1:	74 15                	je     401608 <phase_defused+0x32>
+  
+  4015f3:	48 8b 44 24 68       	mov    0x68(%rsp),%rax
+  4015f8:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  4015ff:	00 00 
+  401601:	75 67                	jne    40166a <phase_defused+0x94>
+  401603:	48 83 c4 78          	add    $0x78,%rsp
+  401607:	c3                   	ret    
+  
+  # 这里前面并没有<read_line>，难道，其实在（特定位置）读入的时候就已经开始折腾这里的了？
+  # 正好<phrase_4>里头接收2个输入，这里算是接续？应该不用换行
+  401608:	4c 8d 44 24 10       	lea    0x10(%rsp),%r8 # 16 这个应该是字符串的开头吧
+  40160d:	48 8d 4c 24 0c       	lea    0xc(%rsp),%rcx # 12
+  401612:	48 8d 54 24 08       	lea    0x8(%rsp),%rdx # 8 这两个整数不知道什么用处
+  401617:	be 19 26 40 00       	mov    $0x402619,%esi # s_%d_%d_%s_00402619
+  40161c:	bf 70 38 60 00       	mov    $0x603870,%edi # input_strings[240]
+  401621:	e8 7a f5 ff ff       	call   400ba0 <__isoc99_sscanf@plt>
+  401626:	83 f8 03             	cmp    $0x3,%eax # 读入了3个东西
+  401629:	74 0c                	je     401637 <phase_defused+0x61>
+  
+  40162b:	bf 58 25 40 00       	mov    $0x402558,%edi # "Congratulations! You've defused the bomb!"
+  401630:	e8 ab f4 ff ff       	call   400ae0 <puts@plt>
+  401635:	eb bc                	jmp    4015f3 <phase_defused+0x1d>
+  
+  401637:	be 22 26 40 00       	mov    $0x402622,%esi # s_urxvt_00402622 "urxvt"
+  40163c:	48 8d 7c 24 10       	lea    0x10(%rsp),%rdi # 接下来好比较字符串。
+  401641:	e8 04 fd ff ff       	call   40134a <strings_not_equal>
+  401646:	85 c0                	test   %eax,%eax
+  401648:	75 e1                	jne    40162b <phase_defused+0x55> # 不相等，寄。
+  40164a:	bf f8 24 40 00       	mov    $0x4024f8,%edi # s_Curses,_you've_found_the_secret_p_004024f8
+  40164f:	e8 8c f4 ff ff       	call   400ae0 <puts@plt>
+  401654:	bf 20 25 40 00       	mov    $0x402520,%edi # s_But_finding_it_and_solving_it_ar_00402520
+  401659:	e8 82 f4 ff ff       	call   400ae0 <puts@plt>
+  40165e:	b8 00 00 00 00       	mov    $0x0,%eax
+  401663:	e8 f7 fb ff ff       	call   40125f <secret_phase>
+  401668:	eb c1                	jmp    40162b <phase_defused+0x55>
+  40166a:	e8 91 f4 ff ff       	call   400b00 <__stack_chk_fail@plt>
+```
+
+`fun7`
+
+```assembly
+0000000000401220 <fun7>:
+# %edx a_1
+# %esi a_2
+# %edi a_3
+  401220:	48 85 ff             	test   %rdi,%rdi # %rdi 为 0 则爆炸。
+  401223:	74 34                	je     401259 <fun7+0x39>
+  401225:	48 83 ec 08          	sub    $0x8,%rsp
+# a_1 = (a_3) = 0x24 = 32+4= 36
+# a_2 肯定不能上来就等于 36
+# 应该有 a_1 <= a_2，这样才能先赋0，再加1，之后再乘2，再乘2。
+# a_2 应该是等于 40，过程如下：
+# a_1 < a_2 = 40
+# a_3' = (a_3 + 16), (a_3') = 50, %eax = 1
+# a_1' = (a_3') > a_2 = 40
+# a_3'' = (a_3' + 8), (a_3'') = 45, %eax = 2
+# a_1'' = (a_3'') > a_2 = 40
+# a_3''' = (a_3'' + 8), (a_3''') = 40, %eax = 4
+# 所指向的内容其实又是特定数组的基址
+# a_1 ?= a_2
+  401229:	8b 17                	mov    (%rdi),%edx
+  40122b:	39 f2                	cmp    %esi,%edx
+  40122d:	7f 0e                	jg     40123d <fun7+0x1d>
+# a_1 <= a_2
+  40122f:	b8 00 00 00 00       	mov    $0x0,%eax # %eax = 0
+  401234:	39 f2                	cmp    %esi,%edx # a_1 ?= a_2
+  401236:	75 12                	jne    40124a <fun7+0x2a>
+# a_1 == a_2
+  401238:	48 83 c4 08          	add    $0x8,%rsp
+  40123c:	c3                   	ret    
+  
+# a_1 > a_2
+  40123d:	48 8b 7f 08          	mov    0x8(%rdi),%rdi # a_3 = (a_3 + 8)
+  # a_3 = $0x6030f0 -> (a_3 + 8) = 00603110【8】
+  # (a_3 + 8) = 00603110 -> ((a_3 + 8) + 8) =  00603190【6】
+  # (a_3 + 8) = 00603110 -> ((a_3 + 8) + 16) =  00603150【0x16=22】
+  401241:	e8 da ff ff ff       	call   401220 <fun7>
+  401246:	01 c0                	add    %eax,%eax # 调用完自身，%eax *= 2
+# 出偶数，应该是得从这吧。
+  401248:	eb ee                	jmp    401238 <fun7+0x18> # 返回。
+  
+# 我们应该是需要这样的地址：(((a_3 + 16) + 8) + 8)
+# a_1 < a_2
+  40124a:	48 8b 7f 10          	mov    0x10(%rdi),%rdi # a_3 = (a_3 + 16)
+  # a_3 = $0x6030f0 -> (a_3 + 16) = 00603130【0x32=48+2=50】
+  # (a_3 + 16) = 00603110 -> ((a_3 + 16) + 8) =  00603170【0x2d=32+13=45】
+  # (a_3 + 16) = 00603110 -> ((a_3 + 16) + 16) =  006031b0【0x6b=96+11=107】
+  # ((a_3 + 16) + 8) =  00603170 ->  (((a_3 + 16) + 8) + 8) = 006031d0【0x28=32+8=40】
+  40124e:	e8 cd ff ff ff       	call   401220 <fun7>
+  401253:	8d 44 00 01          	lea    0x1(%rax,%rax,1),%eax # 调用完自身，%eax = 2*%rax+1
+  401257:	eb df                	jmp    401238 <fun7+0x18>
+  
+# 爆  
+  401259:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
+  40125e:	c3                   	ret    
+```
+
+让我们看看`$0x6030f0`里头放的什么：
+
+```assembly
+                             n1
+                                                                                          secret_phase:00401286 (*)   
+  006030f0 24  00  00       undefine
+           00  00  00 
+           00  00  10 
+  006030f0 24              undefine  24h                     [0]
+                                                                                                                     secret_phase:00401286 (*)   
+  006030f1 00              undefine  00h                     [1]
+  006030f2 00              undefine  00h                     [2]
+  006030f3 00              undefine  00h                     [3]
+  006030f4 00              undefine  00h                     [4]
+  006030f5 00              undefine  00h                     [5]
+  006030f6 00              undefine  00h                     [6]
+  006030f7 00              undefine  00h                     [7]
+  # 小端序，(a_3 + 8) = 0x603110
+  006030f8 10              undefine  10h                     [8]           ?  ->  00603110
+  006030f9 31              undefine  31h                     [9]
+  006030fa 60              undefine  60h                     [10]
+  006030fb 00              undefine  00h                     [11]
+  006030fc 00              undefine  00h                     [12]
+  006030fd 00              undefine  00h                     [13]
+  006030fe 00              undefine  00h                     [14]
+  006030ff 00              undefine  00h                     [15]
+  # (a_3 + 16) = 0x603130
+  00603100 30              undefine  30h                     [16]          ?  ->  00603130
+  00603101 31              undefine  31h                     [17]
+  00603102 60              undefine  60h                     [18]
+  00603103 00              undefine  00h                     [19]
+  00603104 00              undefine  00h                     [20]
+  00603105 00              undefine  00h                     [21]
+  00603106 00              undefine  00h                     [22]
+  00603107 00              undefine  00h                     [23]
+
+```
+
+其他的几个需要读的数组也都是这个样子。
+
+这里多次出现了`<num_input_strings>`，但是`<num_input_strings>`到底是如何自增的。
+
+```assembly
+00000000004014a8 <read_line>:
+  4014a8:	48 83 ec 08          	sub    $0x8,%rsp
+  4014ac:	b8 00 00 00 00       	mov    $0x0,%eax
+  4014b1:	e8 50 ff ff ff       	call   401406 <skip>
+  4014b6:	48 85 c0             	test   %rax,%rax
+  4014b9:	74 63                	je     40151e <read_line+0x76>
+  4014bb:	8b 35 ab 22 20 00    	mov    0x2022ab(%rip),%esi        # 60376c <num_input_strings>
+  4014c1:	48 63 c6             	movslq %esi,%rax
+  4014c4:	48 8d 14 80          	lea    (%rax,%rax,4),%rdx
+  4014c8:	48 c1 e2 04          	shl    $0x4,%rdx
+  4014cc:	48 81 c2 80 37 60 00 	add    $0x603780,%rdx
+  4014d3:	48 c7 c1 ff ff ff ff 	mov    $0xffffffffffffffff,%rcx
+  4014da:	b8 00 00 00 00       	mov    $0x0,%eax
+  4014df:	48 89 d7             	mov    %rdx,%rdi
+  4014e2:	f2 ae                	repnz scas %es:(%rdi),%al
+  4014e4:	48 f7 d1             	not    %rcx
+  4014e7:	48 83 e9 01          	sub    $0x1,%rcx
+  4014eb:	83 f9 4e             	cmp    $0x4e,%ecx
+  4014ee:	0f 8f 9c 00 00 00    	jg     401590 <read_line+0xe8>
+  4014f4:	83 e9 01             	sub    $0x1,%ecx
+  4014f7:	48 63 c9             	movslq %ecx,%rcx
+  4014fa:	48 63 c6             	movslq %esi,%rax
+  4014fd:	48 8d 04 80          	lea    (%rax,%rax,4),%rax
+  401501:	48 c1 e0 04          	shl    $0x4,%rax
+  401505:	c6 84 01 80 37 60 00 	movb   $0x0,0x603780(%rcx,%rax,1)
+  40150c:	00 
+  40150d:	8d 46 01             	lea    0x1(%rsi),%eax
+  401510:	89 05 56 22 20 00    	mov    %eax,0x202256(%rip)        # 60376c <num_input_strings>
+  401516:	48 89 d0             	mov    %rdx,%rax
+  401519:	48 83 c4 08          	add    $0x8,%rsp
+  40151d:	c3                   	ret    
+  40151e:	48 8b 05 2b 22 20 00 	mov    0x20222b(%rip),%rax        # 603750 <stdin@@GLIBC_2.2.5>
+  401525:	48 39 05 44 22 20 00 	cmp    %rax,0x202244(%rip)        # 603770 <infile>
+  40152c:	74 19                	je     401547 <read_line+0x9f>
+  40152e:	bf f3 25 40 00       	mov    $0x4025f3,%edi
+  401533:	e8 78 f5 ff ff       	call   400ab0 <getenv@plt>
+  401538:	48 85 c0             	test   %rax,%rax
+  40153b:	74 1e                	je     40155b <read_line+0xb3>
+  40153d:	bf 00 00 00 00       	mov    $0x0,%edi
+  401542:	e8 89 f6 ff ff       	call   400bd0 <exit@plt>
+  401547:	bf d5 25 40 00       	mov    $0x4025d5,%edi
+  40154c:	e8 8f f5 ff ff       	call   400ae0 <puts@plt>
+  401551:	bf 08 00 00 00       	mov    $0x8,%edi
+  401556:	e8 75 f6 ff ff       	call   400bd0 <exit@plt>
+  40155b:	48 8b 05 ee 21 20 00 	mov    0x2021ee(%rip),%rax        # 603750 <stdin@@GLIBC_2.2.5>
+  401562:	48 89 05 07 22 20 00 	mov    %rax,0x202207(%rip)        # 603770 <infile>
+  401569:	b8 00 00 00 00       	mov    $0x0,%eax
+  40156e:	e8 93 fe ff ff       	call   401406 <skip>
+  401573:	48 85 c0             	test   %rax,%rax
+  401576:	0f 85 3f ff ff ff    	jne    4014bb <read_line+0x13>
+  40157c:	bf d5 25 40 00       	mov    $0x4025d5,%edi
+  401581:	e8 5a f5 ff ff       	call   400ae0 <puts@plt>
+  401586:	bf 00 00 00 00       	mov    $0x0,%edi
+  40158b:	e8 40 f6 ff ff       	call   400bd0 <exit@plt>
+  401590:	bf fe 25 40 00       	mov    $0x4025fe,%edi
+  401595:	e8 46 f5 ff ff       	call   400ae0 <puts@plt>
+  40159a:	8b 05 cc 21 20 00    	mov    0x2021cc(%rip),%eax        # 60376c <num_input_strings>
+  4015a0:	8d 50 01             	lea    0x1(%rax),%edx
+  4015a3:	89 15 c3 21 20 00    	mov    %edx,0x2021c3(%rip)        # 60376c <num_input_strings>
+  4015a9:	48 98                	cltq   
+  4015ab:	48 6b c0 50          	imul   $0x50,%rax,%rax
+  4015af:	48 be 2a 2a 2a 74 72 	movabs $0x636e7572742a2a2a,%rsi
+  4015b6:	75 6e 63 
+  4015b9:	48 bf 61 74 65 64 2a 	movabs $0x2a2a2a64657461,%rdi
+  4015c0:	2a 2a 00 
+  4015c3:	48 89 b0 80 37 60 00 	mov    %rsi,0x603780(%rax)
+  4015ca:	48 89 b8 88 37 60 00 	mov    %rdi,0x603788(%rax)
+  4015d1:	e8 71 fe ff ff       	call   401447 <explode_bomb>
+```
+
 
 
 ## 四、实验总结
@@ -590,6 +858,8 @@ https://stackoverflow.com/questions/48129466/why-do-we-use-byte-addressing-inste
 `CMP`: **Subtracts source from destination.**
 
 https://stackoverflow.com/questions/21872334/what-does-js-do-in-assembly-x86
+
+非常好缩写、有/无符号。
 
 http://www.unixwiz.net/techtips/x86-jumps.html
 
@@ -794,3 +1064,11 @@ If you shifted one bit to the right, yes. You can specify the shift amount, so i
 If you did a logical shift of 11111111b one bit to the right you'd  get 01111111b. Whether you consider that to be incorrect or not depends  entirely on what you're trying to achieve. If you wanted to preserve the sign you should've used `SAR`.
 
 https://stackoverflow.com/questions/30644708/shr-and-sar-commands
+
+### `strtol`
+
+Interprets an integer value in a byte string pointed to by `str`.
+
+If successful, an integer value corresponding to the contents of `str` is returned.
+
+###### https://en.cppreference.com/w/c/string/byte/strtol
